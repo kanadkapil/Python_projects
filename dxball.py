@@ -5,21 +5,37 @@ import random
 pygame.init()
 
 # Constants
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 600
-PADDLE_WIDTH = 100
+SCREEN_WIDTH = 1420
+SCREEN_HEIGHT = 900
+PADDLE_WIDTH = 300
 PADDLE_HEIGHT = 20
-BALL_SIZE = 15
-BRICK_WIDTH = 75
-BRICK_HEIGHT = 20
+BALL_SIZE = 30
+BRICK_WIDTH = 116
+BRICK_HEIGHT = 45
 ROWS = 5
-COLS = 10
+COLS = 12
 
 # Colors
 WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-RED = (255, 0, 0)
-GREEN = (0, 255, 0)
+BACKGROUND = (0, 0, 0)
+BALL = (255, 0, 0)
+PADDLE = (254, 249, 217)
+
+# Define the specified brick colors
+BRICK_COLORS = [
+    (253, 139, 81),  # #FD8B51
+    (242, 229, 191), # #F2E5BF
+    (37, 113, 128),  # #257180
+    (98, 149, 132),  # #629584
+    (211, 238, 152), # #D3EE98
+    (100, 13, 95),   # #640D5F
+    (121, 87, 87),   # #795757
+    (102, 67, 67),   # #664343
+    (254, 249, 217), # #FEF9D9
+    (237, 62, 247),  # #ED3EF7
+    (72, 207, 203)   # #48CFCB
+]
+
 
 # Setup screen
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -38,7 +54,7 @@ class Paddle:
             self.rect.x = SCREEN_WIDTH - PADDLE_WIDTH
 
     def draw(self):
-        pygame.draw.rect(screen, GREEN, self.rect)
+        pygame.draw.rect(screen, PADDLE, self.rect)
 
 # Ball class
 class Ball:
@@ -63,17 +79,18 @@ class Ball:
         self.dy = -4
 
     def draw(self):
-        pygame.draw.ellipse(screen, RED, self.rect)
+        pygame.draw.ellipse(screen, BALL, self.rect)
 
 # Brick class
 class Brick:
     def __init__(self, x, y):
         self.rect = pygame.Rect(x, y, BRICK_WIDTH, BRICK_HEIGHT)
         self.alive = True
+        self.color = random.choice(BRICK_COLORS)  # Assign a random color from the specified colors
 
     def draw(self):
         if self.alive:
-            pygame.draw.rect(screen, WHITE, self.rect)
+            pygame.draw.rect(screen, self.color, self.rect)  # Use the assigned color
 
 # Game Loop
 def main():
@@ -112,7 +129,7 @@ def main():
             ball.reset()
 
         # Clear screen
-        screen.fill(BLACK)
+        screen.fill(BACKGROUND)
 
         # Draw everything
         paddle.draw()
@@ -121,7 +138,7 @@ def main():
             brick.draw()
 
         pygame.display.flip()
-        clock.tick(60)
+        clock.tick(120) #ball speed
 
     pygame.quit()
 
