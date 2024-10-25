@@ -15,14 +15,12 @@ WHITE = (255, 255, 255)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 
-# Rocket class
 class Rocket(pygame.sprite.Sprite):
     def __init__(self):
         super().__init__()
         self.image = pygame.Surface((50, 30))
         self.image.fill(GREEN)
-        self.rect = self.image.get_rect()
-        self.rect.center = (WIDTH // 2, HEIGHT - 50)
+        self.rect = self.image.get_rect(center=(WIDTH // 2, HEIGHT - 50))
 
     def update(self):
         keys = pygame.key.get_pressed()
@@ -35,7 +33,6 @@ class Rocket(pygame.sprite.Sprite):
         if keys[pygame.K_DOWN] and self.rect.bottom < HEIGHT:
             self.rect.y += 5
 
-# Rock class
 class Rock(pygame.sprite.Sprite):
     def __init__(self):
         super().__init__()
@@ -44,52 +41,44 @@ class Rock(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.x = random.randint(0, WIDTH - 40)
         self.rect.y = random.randint(-100, -40)
-        self.speed = random.randint(2, 5)  # Different speeds
+        self.speed = random.randint(2, 5)
 
     def update(self):
         self.rect.y += self.speed
         if self.rect.top > HEIGHT:
-            self.kill()  # Remove rock when it goes off screen
+            self.kill()
 
-# Bullet class
 class Bullet(pygame.sprite.Sprite):
     def __init__(self, x, y):
         super().__init__()
         self.image = pygame.Surface((5, 10))
         self.image.fill(WHITE)
-        self.rect = self.image.get_rect()
-        self.rect.center = (x, y)
+        self.rect = self.image.get_rect(center=(x, y))
 
     def update(self):
         self.rect.y -= 10
         if self.rect.bottom < 0:
             self.kill()
 
+def reset_game():
+    global score
+    score = 0
+    rocks.empty()
+    bullets.empty()
+
+score = 0
+font = pygame.font.SysFont("Arial", 24)
+
 # Initialize sprite groups
 all_sprites = pygame.sprite.Group()
 rocks = pygame.sprite.Group()
 bullets = pygame.sprite.Group()
 
-# Create the player rocket
 rocket = Rocket()
 all_sprites.add(rocket)
 
-# Function to reset the game
-def reset_game():
-    global score
-    score = 0
-    for rock in rocks:
-        rock.kill()
-    for bullet in bullets:
-        bullet.kill()
-    for _ in range(random.randint(3, 4)):
-        rock = Rock()
-        all_sprites.add(rock)
-        rocks.add(rock)
-
-# Score
-score = 0
-font = pygame.font.SysFont("Arial", 24)
+# Set a timer for spawning rocks
+pygame.time.set_timer(pygame.USEREVENT, 1000)
 
 # Game loop
 running = True
@@ -109,39 +98,34 @@ while running:
             if event.key == pygame.K_r and game_over:
                 game_over = False
                 reset_game()
+            if event.key == pygame.K_q and game_over:  # Quit option
+                running = False
+        elif event.type == pygame.USEREVENT and not game_over:
+            rock = Rock()
+            all_sprites.add(rock)
+            rocks.add(rock)
 
-    # Update
     if not game_over:
         all_sprites.update()
-
-        # Check for collisions
         if pygame.sprite.spritecollideany(rocket, rocks):
             game_over = True
-
         for bullet in bullets:
             hits = pygame.sprite.spritecollide(bullet, rocks, True)
-            for hit in hits:
-                score += 10
-                rock = Rock()
-                all_sprites.add(rock)
-                rocks.add(rock)
             if hits:
+                score += 10
                 bullet.kill()
 
-    # Draw
+    # Draw everything
     screen.fill(BLACK)
     all_sprites.draw(screen)
-
-    # Draw score
     score_text = font.render(f"Score: {score}", True, WHITE)
     screen.blit(score_text, (10, 10))
 
-    # Game Over screen
     if game_over:
         game_over_text = font.render("Game Over! Press 'R' to Restart or 'Q' to Quit", True, WHITE)
         screen.blit(game_over_text, (WIDTH // 2 - 250, HEIGHT // 2))
 
     pygame.display.flip()
-    clock.tick(60)
+    clock.tick(100)
 
 pygame.quit()
