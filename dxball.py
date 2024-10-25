@@ -8,7 +8,7 @@ pygame.init()
 SCREEN_WIDTH = 1420
 SCREEN_HEIGHT = 900
 PADDLE_WIDTH = 300
-PADDLE_HEIGHT = 20
+PADDLE_HEIGHT = 30
 BALL_SIZE = 30
 BRICK_WIDTH = 116
 BRICK_HEIGHT = 45
@@ -18,7 +18,7 @@ COLS = 12
 # Colors
 WHITE = (255, 255, 255)
 BACKGROUND = (0, 0, 0)
-BALL = (255, 0, 0)
+BALL =(162, 210, 223)
 PADDLE = (254, 249, 217)
 
 # Define the specified brick colors
@@ -33,6 +33,9 @@ BRICK_COLORS = [
     (102, 67, 67),   # #664343
     (254, 249, 217), # #FEF9D9
     (237, 62, 247),  # #ED3EF7
+    (255, 179, 142),  # #ED3EF7
+    (246, 239, 189),  # #ED3EF7
+    (228, 192, 135),  # #ED3EF7
     (72, 207, 203)   # #48CFCB
 ]
 
