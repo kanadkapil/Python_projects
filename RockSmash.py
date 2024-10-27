@@ -1,5 +1,6 @@
 import pygame
 import random
+import os
 
 # Initialize Pygame
 pygame.init()
@@ -7,13 +8,31 @@ pygame.init()
 # Screen dimensions
 WIDTH, HEIGHT = 800, 600
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Simple Rock Shooter")
+pygame.display.set_caption("Enhanced Rock Shooter")
 
 # Colors
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
+BLUE = (0, 0, 255)
+
+# Sound setup
+pygame.mixer.init()
+
+# Helper function to load sound and handle missing files
+def load_sound(file):
+    if os.path.isfile(file):
+        return pygame.mixer.Sound(file)
+    return None
+
+# Load sounds (they’ll be None if files are missing)
+shoot_sound = load_sound("shoot.wav")
+explosion_sound = load_sound("explosion.wav")
+game_over_sound = load_sound("game_over.wav")
+if os.path.isfile("background_music.mp3"):
+    pygame.mixer.music.load("background_music.mp3")
+    pygame.mixer.music.play(-1)
 
 class Rocket(pygame.sprite.Sprite):
     def __init__(self):
@@ -21,6 +40,7 @@ class Rocket(pygame.sprite.Sprite):
         self.image = pygame.Surface((50, 30))
         self.image.fill(GREEN)
         self.rect = self.image.get_rect(center=(WIDTH // 2, HEIGHT - 50))
+        self.lives = 3
 
     def update(self):
         keys = pygame.key.get_pressed()
@@ -34,14 +54,14 @@ class Rocket(pygame.sprite.Sprite):
             self.rect.y += 5
 
 class Rock(pygame.sprite.Sprite):
-    def __init__(self):
+    def __init__(self, speed):
         super().__init__()
-        self.image = pygame.Surface((40, 40))
+        self.image = pygame.Surface((random.randint(30, 50), random.randint(30, 50)))
         self.image.fill(RED)
         self.rect = self.image.get_rect()
-        self.rect.x = random.randint(0, WIDTH - 40)
+        self.rect.x = random.randint(0, WIDTH - self.rect.width)
         self.rect.y = random.randint(-100, -40)
-        self.speed = random.randint(2, 5)
+        self.speed = speed
 
     def update(self):
         self.rect.y += self.speed
@@ -60,25 +80,46 @@ class Bullet(pygame.sprite.Sprite):
         if self.rect.bottom < 0:
             self.kill()
 
+class PowerUp(pygame.sprite.Sprite):
+    def __init__(self):
+        super().__init__()
+        self.image = pygame.Surface((30, 30))
+        self.image.fill(BLUE)
+        self.rect = self.image.get_rect(center=(random.randint(0, WIDTH), random.randint(-100, -40)))
+        self.speed = 2
+
+    def update(self):
+        self.rect.y += self.speed
+        if self.rect.top > HEIGHT:
+            self.kill()
+
 def reset_game():
-    global score
+    global score, level
     score = 0
+    level = 1
+    rocket.lives = 3
     rocks.empty()
     bullets.empty()
+    powerups.empty()
 
 score = 0
+level = 1
 font = pygame.font.SysFont("Arial", 24)
 
 # Initialize sprite groups
 all_sprites = pygame.sprite.Group()
 rocks = pygame.sprite.Group()
 bullets = pygame.sprite.Group()
+powerups = pygame.sprite.Group()
 
 rocket = Rocket()
 all_sprites.add(rocket)
 
-# Set a timer for spawning rocks
-pygame.time.set_timer(pygame.USEREVENT, 1000)
+# Set timers
+ROCK_EVENT = pygame.USEREVENT + 1
+POWERUP_EVENT = pygame.USEREVENT + 2
+pygame.time.set_timer(ROCK_EVENT, 1000)
+pygame.time.set_timer(POWERUP_EVENT, 10000)
 
 # Game loop
 running = True
@@ -95,37 +136,64 @@ while running:
                 bullet = Bullet(rocket.rect.centerx, rocket.rect.top)
                 all_sprites.add(bullet)
                 bullets.add(bullet)
+                if shoot_sound:
+                    shoot_sound.play()
             if event.key == pygame.K_r and game_over:
                 game_over = False
                 reset_game()
-            if event.key == pygame.K_q and game_over:  # Quit option
+            if event.key == pygame.K_q and game_over:
                 running = False
-        elif event.type == pygame.USEREVENT and not game_over:
-            rock = Rock()
+        elif event.type == ROCK_EVENT and not game_over:
+            rock = Rock(random.randint(2, 5 + level))
             all_sprites.add(rock)
             rocks.add(rock)
+        elif event.type == POWERUP_EVENT and not game_over:
+            powerup = PowerUp()
+            all_sprites.add(powerup)
+            powerups.add(powerup)
 
     if not game_over:
         all_sprites.update()
+
+        # Collision detection
         if pygame.sprite.spritecollideany(rocket, rocks):
-            game_over = True
+            if explosion_sound:
+                explosion_sound.play()
+            rocket.lives -= 1
+            if rocket.lives <= 0:
+                game_over = True
+                if game_over_sound:
+                    game_over_sound.play()
+
         for bullet in bullets:
             hits = pygame.sprite.spritecollide(bullet, rocks, True)
             if hits:
                 score += 10
                 bullet.kill()
+                if explosion_sound:
+                    explosion_sound.play()
+                if score % 50 == 0:
+                    level += 1
+
+        # Power-up collection
+        if pygame.sprite.spritecollide(rocket, powerups, True):
+            rocket.lives += 1  # Extra life for collecting power-up
 
     # Draw everything
     screen.fill(BLACK)
     all_sprites.draw(screen)
     score_text = font.render(f"Score: {score}", True, WHITE)
+    lives_text = font.render(f"Lives: {rocket.lives}", True, WHITE)
+    level_text = font.render(f"Level: {level}", True, WHITE)
     screen.blit(score_text, (10, 10))
+    screen.blit(lives_text, (10, 40))
+    screen.blit(level_text, (10, 70))
 
     if game_over:
         game_over_text = font.render("Game Over! Press 'R' to Restart or 'Q' to Quit", True, WHITE)
         screen.blit(game_over_text, (WIDTH // 2 - 250, HEIGHT // 2))
 
     pygame.display.flip()
-    clock.tick(120)
+    clock.tick(60)
 
 pygame.quit()
