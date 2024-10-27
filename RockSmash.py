@@ -126,6 +126,6 @@ while running:
         screen.blit(game_over_text, (WIDTH // 2 - 250, HEIGHT // 2))
 
     pygame.display.flip()
-    clock.tick(100)
+    clock.tick(120)
 
 pygame.quit()
