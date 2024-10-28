@@ -41,17 +41,18 @@ class Rocket(pygame.sprite.Sprite):
         self.image.fill(GREEN)
         self.rect = self.image.get_rect(center=(WIDTH // 2, HEIGHT - 50))
         self.lives = 3
+        self.speed = 5
 
     def update(self):
         keys = pygame.key.get_pressed()
         if keys[pygame.K_LEFT] and self.rect.left > 0:
-            self.rect.x -= 5
+            self.rect.x -= self.speed
         if keys[pygame.K_RIGHT] and self.rect.right < WIDTH:
-            self.rect.x += 5
+            self.rect.x += self.speed
         if keys[pygame.K_UP] and self.rect.top > 0:
-            self.rect.y -= 5
+            self.rect.y -= self.speed
         if keys[pygame.K_DOWN] and self.rect.bottom < HEIGHT:
-            self.rect.y += 5
+            self.rect.y += self.speed
 
 class Rock(pygame.sprite.Sprite):
     def __init__(self, speed):
@@ -81,10 +82,14 @@ class Bullet(pygame.sprite.Sprite):
             self.kill()
 
 class PowerUp(pygame.sprite.Sprite):
-    def __init__(self):
+    def __init__(self, effect_type):
         super().__init__()
         self.image = pygame.Surface((30, 30))
-        self.image.fill(BLUE)
+        self.effect_type = effect_type
+        if effect_type == "extra_life":
+            self.image.fill(BLUE)
+        elif effect_type == "speed_boost":
+            self.image.fill(GREEN)
         self.rect = self.image.get_rect(center=(random.randint(0, WIDTH), random.randint(-100, -40)))
         self.speed = 2
 
@@ -93,15 +98,7 @@ class PowerUp(pygame.sprite.Sprite):
         if self.rect.top > HEIGHT:
             self.kill()
 
-def reset_game():
-    global score, level
-    score = 0
-    level = 1
-    rocket.lives = 3
-    rocks.empty()
-    bullets.empty()
-    powerups.empty()
-
+# Initialize game variables
 score = 0
 level = 1
 font = pygame.font.SysFont("Arial", 24)
@@ -121,6 +118,16 @@ POWERUP_EVENT = pygame.USEREVENT + 2
 pygame.time.set_timer(ROCK_EVENT, 1000)
 pygame.time.set_timer(POWERUP_EVENT, 10000)
 
+def reset_game():
+    global score, level
+    score = 0
+    level = 1
+    rocket.lives = 3
+    rocket.speed = 5
+    rocks.empty()
+    bullets.empty()
+    powerups.empty()
+
 # Game loop
 running = True
 game_over = False
@@ -128,6 +135,7 @@ clock = pygame.time.Clock()
 reset_game()
 
 while running:
+    # Event Handling
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -144,18 +152,21 @@ while running:
             if event.key == pygame.K_q and game_over:
                 running = False
         elif event.type == ROCK_EVENT and not game_over:
+            spawn_rate = max(1000 - level * 50, 200)
+            pygame.time.set_timer(ROCK_EVENT, spawn_rate)
             rock = Rock(random.randint(2, 5 + level))
             all_sprites.add(rock)
             rocks.add(rock)
         elif event.type == POWERUP_EVENT and not game_over:
-            powerup = PowerUp()
+            effect_type = random.choice(["extra_life", "speed_boost"])
+            powerup = PowerUp(effect_type)
             all_sprites.add(powerup)
             powerups.add(powerup)
 
     if not game_over:
         all_sprites.update()
 
-        # Collision detection
+        # Collision detection for rocket and rocks
         if pygame.sprite.spritecollideany(rocket, rocks):
             if explosion_sound:
                 explosion_sound.play()
@@ -165,6 +176,7 @@ while running:
                 if game_over_sound:
                     game_over_sound.play()
 
+        # Collision detection for bullets and rocks
         for bullet in bullets:
             hits = pygame.sprite.spritecollide(bullet, rocks, True)
             if hits:
@@ -176,8 +188,11 @@ while running:
                     level += 1
 
         # Power-up collection
-        if pygame.sprite.spritecollide(rocket, powerups, True):
-            rocket.lives += 1  # Extra life for collecting power-up
+        for powerup in pygame.sprite.spritecollide(rocket, powerups, True):
+            if powerup.effect_type == "extra_life":
+                rocket.lives += 1
+            elif powerup.effect_type == "speed_boost":
+                rocket.speed += 2
 
     # Draw everything
     screen.fill(BLACK)
