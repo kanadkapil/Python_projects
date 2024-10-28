@@ -20,7 +20,10 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption('Tic Tac Toe')
 
 # Board setup
-board = [[" " for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
+def reset_board():
+    return [[" " for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
+
+board = reset_board()
 current_player = "X"
 font = pygame.font.SysFont("Arial", 24)
 
@@ -59,34 +62,46 @@ def draw_message(message):
     text = font.render(message, True, FONT_COLOR)
     screen.blit(text, (WIDTH // 2 - text.get_width() // 2, HEIGHT - 80))
 
+def draw_restart_quit_options(winner):
+    text = font.render(f"{winner} wins! Press R to restart or Q to quit.", True, FONT_COLOR)
+    screen.blit(text, (WIDTH // 2 - text.get_width() // 2, HEIGHT - 40))
+
 # Main loop
 while True:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
+
         if event.type == pygame.MOUSEBUTTONDOWN:
-            mouseX, mouseY = event.pos
-            if mouseY < HEIGHT - 100:  # Check if click is in the board area
-                row = mouseY // CELL_SIZE
-                col = mouseX // CELL_SIZE
-                if board[row][col] == " ":
-                    board[row][col] = current_player
-                    winner = check_winner()
-                    if winner:
-                        draw_board()
-                        draw_message(f"{winner} wins!")
-                        pygame.display.update()
-                        pygame.time.delay(2000)
-                        board = [[" " for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]  # Reset the board
-                    elif is_full():
-                        draw_board()
-                        draw_message("It's a draw!")
-                        pygame.display.update()
-                        pygame.time.delay(2000)
-                        board = [[" " for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]  # Reset the board
-                    current_player = "O" if current_player == "X" else "X"
+            if current_player and not is_full():  # Only allow clicking if the game is ongoing
+                mouseX, mouseY = event.pos
+                if mouseY < HEIGHT - 100:  # Check if click is in the board area
+                    row = mouseY // CELL_SIZE
+                    col = mouseX // CELL_SIZE
+                    if board[row][col] == " ":
+                        board[row][col] = current_player
+                        winner = check_winner()
+                        if winner:
+                            current_player = None  # Disable further moves
+                        elif is_full():
+                            winner = "It's a draw!"
+                            current_player = None  # Disable further moves
+                        else:
+                            current_player = "O" if current_player == "X" else "X"
+
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_r and current_player is None:  # Restart game
+                board = reset_board()
+                current_player = "X"
+            elif event.key == pygame.K_q and current_player is None:  # Quit game
+                pygame.quit()
+                sys.exit()
 
     draw_board()
-    draw_message(f"{current_player}'s turn")
+    if current_player is not None:
+        draw_message(f"{current_player}'s turn")
+    if not current_player and winner:
+        draw_restart_quit_options(winner)
+
     pygame.display.update()
