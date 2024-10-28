@@ -13,7 +13,7 @@ WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 BLUE = (0, 0, 255)
-FONT_COLOR = (0, 0, 0)
+FONT_COLOR = (255, 255, 255)
 
 # Create the window
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -25,10 +25,10 @@ current_player = "X"
 font = pygame.font.SysFont("Arial", 24)
 
 def draw_board():
-    screen.fill(WHITE)
+    screen.fill(BLACK)
     for i in range(1, BOARD_SIZE):
-        pygame.draw.line(screen, BLACK, (0, CELL_SIZE * i), (WIDTH, CELL_SIZE * i), LINE_WIDTH)
-        pygame.draw.line(screen, BLACK, (CELL_SIZE * i, 0), (CELL_SIZE * i, HEIGHT - 100), LINE_WIDTH)
+        pygame.draw.line(screen, WHITE, (0, CELL_SIZE * i), (WIDTH, CELL_SIZE * i), LINE_WIDTH)
+        pygame.draw.line(screen, WHITE, (CELL_SIZE * i, 0), (CELL_SIZE * i, HEIGHT - 100), LINE_WIDTH)
 
     for row in range(BOARD_SIZE):
         for col in range(BOARD_SIZE):
