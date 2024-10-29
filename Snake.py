@@ -5,9 +5,9 @@ import time
 # Initialize pygame
 pygame.init()
 
-# Screen dimensions
+# Updated Screen dimensions for larger frame
 screen_width = 1200
-screen_height = 800
+screen_height = 1000
 screen = pygame.display.set_mode((screen_width, screen_height))
 
 # Colors
@@ -18,13 +18,13 @@ green = (0, 255, 0)
 blue = (50, 153, 213)
 yellow = (255, 215, 0)  # Color for bonus food
 
-# Snake settings
-snake_block = 20
-initial_snake_speed = 15
+# Updated Snake settings
+snake_block = 20  # Larger block size for bigger snake
+initial_snake_speed = 10
 
 # Font settings
-font_style = pygame.font.SysFont("bahnschrift", 25)
-score_font = pygame.font.SysFont("comicsansms", 25)
+font_style = pygame.font.SysFont("bahnschrift", 35)
+score_font = pygame.font.SysFont("comicsansms", 45)
 
 def display_score(score):
     value = score_font.render("Score: " + str(score), True, blue)
@@ -48,8 +48,8 @@ def game_loop():
     length_of_snake = 1
 
     # Food coordinates
-    food_x = round(random.randrange(0, screen_width - snake_block) / 10.0) * 10.0
-    food_y = round(random.randrange(0, screen_height - snake_block) / 10.0) * 10.0
+    food_x = round(random.randrange(0, screen_width - snake_block) / snake_block) * snake_block
+    food_y = round(random.randrange(0, screen_height - snake_block) / snake_block) * snake_block
 
     # Bonus food settings
     bonus_food = None
@@ -104,12 +104,12 @@ def game_loop():
         y1 += y1_change
         screen.fill(black)
 
-        # Draw regular food
-        pygame.draw.circle(screen, red, (int(food_x), int(food_y)), snake_block // 2)
+        # Draw regular food as a circle
+        pygame.draw.circle(screen, red, (int(food_x + snake_block // 2), int(food_y + snake_block // 2)), snake_block // 2)
         
         # Draw bonus food if active
         if bonus_food:
-            pygame.draw.circle(screen, yellow, (int(bonus_food[0]), int(bonus_food[1])), snake_block // 2)
+            pygame.draw.circle(screen, yellow, (int(bonus_food[0] + snake_block // 2), int(bonus_food[1] + snake_block // 2)), snake_block // 2)
             # Check if bonus food timer has expired
             if time.time() - bonus_food_timer > bonus_food_duration:
                 bonus_food = None  # Remove bonus food after timer expires
@@ -132,16 +132,16 @@ def game_loop():
 
         # Check if snake eats regular food
         if abs(x1 - food_x) < snake_block and abs(y1 - food_y) < snake_block:
-            food_x = round(random.randrange(0, screen_width - snake_block) / 10.0) * 10.0
-            food_y = round(random.randrange(0, screen_height - snake_block) / 10.0) * 10.0
+            food_x = round(random.randrange(0, screen_width - snake_block) / snake_block) * snake_block
+            food_y = round(random.randrange(0, screen_height - snake_block) / snake_block) * snake_block
             length_of_snake += 1
             score += 1
             snake_speed += 1  # Gradually increase speed
 
             # Occasionally spawn bonus food
             if random.randint(0, 3) == 0:  # 25% chance to spawn bonus food
-                bonus_food = (round(random.randrange(0, screen_width - snake_block) / 10.0) * 10.0,
-                              round(random.randrange(0, screen_height - snake_block) / 10.0) * 10.0)
+                bonus_food = (round(random.randrange(0, screen_width - snake_block) / snake_block) * snake_block,
+                              round(random.randrange(0, screen_height - snake_block) / snake_block) * snake_block)
                 bonus_food_timer = time.time()
 
         # Check if snake eats bonus food
