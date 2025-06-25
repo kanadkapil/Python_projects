@@ -11,6 +11,7 @@ pygame.mixer.init()
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 PLAYER_SPEED = 5
+PLAYER_SAFE_ZONE_HEIGHT = 200 # Player can move within the bottom 200 pixels of the screen
 
 # Base difficulty parameters (will increase with levels)
 BASE_BULLET_SPEED = 10
@@ -43,7 +44,7 @@ GREEN = (0, 255, 0)
 BLUE = (0, 150, 255)
 YELLOW = (255, 255, 0)
 GREY = (100, 100, 100)
-LIGHT_BLUE = (173, 216, 230)
+LIGHT_BLUE = (173, 216, 230) # For level complete message
 SHIELD_COLOR = (0, 100, 0) # Dark green for shields
 
 # Setup the display
@@ -73,8 +74,8 @@ try:
     enemy_explosion_sound = pygame.mixer.Sound(os.path.join(script_dir, 'explosion.wav'))
     player_hit_sound = pygame.mixer.Sound(os.path.join(script_dir, 'hit.wav'))
     level_up_sound = pygame.mixer.Sound(os.path.join(script_dir, 'levelup.wav'))
-    mystery_ship_sound = pygame.mixer.Sound(os.path.join(script_dir, 'ufo_highpitch.wav')) # UFO flying sound
-    mystery_ship_explode_sound = pygame.mixer.Sound(os.path.join(script_dir, 'ufo_lowpitch.wav')) # UFO explosion sound
+    mystery_ship_sound = pygame.mixer.Sound(os.path.join(script_dir, 'ufo_highpitch.wav'))
+    mystery_ship_explode_sound = pygame.mixer.Sound(os.path.join(script_dir, 'ufo_lowpitch.wav'))
 except (FileNotFoundError, pygame.error) as e:
     print(f"Error loading sound files: {e}. Sounds will be disabled.")
 
@@ -105,10 +106,25 @@ class Player(pygame.sprite.Sprite):
             self.rect.x -= PLAYER_SPEED
         if keys[pygame.K_RIGHT]:
             self.rect.x += PLAYER_SPEED
+        if keys[pygame.K_UP]:
+            self.rect.y -= PLAYER_SPEED
+        if keys[pygame.K_DOWN]:
+            self.rect.y += PLAYER_SPEED
+
+        # Keep player within screen bounds (X-axis)
         if self.rect.left < 0:
             self.rect.left = 0
         if self.rect.right > SCREEN_WIDTH:
             self.rect.right = SCREEN_WIDTH
+
+        # Keep player within designated safe zone (Y-axis)
+        # Top boundary for player's movement area
+        player_top_bound = SCREEN_HEIGHT - PLAYER_SAFE_ZONE_HEIGHT
+        if self.rect.top < player_top_bound:
+            self.rect.top = player_top_bound
+        # Bottom boundary (screen bottom)
+        if self.rect.bottom > SCREEN_HEIGHT:
+            self.rect.bottom = SCREEN_HEIGHT
 
 class Bullet(pygame.sprite.Sprite):
     """Represents a bullet fired by the player."""
@@ -172,30 +188,28 @@ class MysteryShip(pygame.sprite.Sprite):
     def __init__(self, speed):
         super().__init__()
         self.image = pygame.Surface([60, 30], pygame.SRCALPHA)
-        # Simple UFO shape: two ellipses and a rectangle
-        pygame.draw.ellipse(self.image, YELLOW, (0, 10, 60, 20)) # Main body
-        pygame.draw.ellipse(self.image, GREY, (10, 0, 40, 15)) # Top dome
+        pygame.draw.ellipse(self.image, YELLOW, (0, 10, 60, 20))
+        pygame.draw.ellipse(self.image, GREY, (10, 0, 40, 15))
         self.rect = self.image.get_rect()
-        # Randomly appear from left or right
         if random.choice([True, False]):
-            self.rect.x = -self.rect.width # Start off left
+            self.rect.x = -self.rect.width
             self.direction = 1
         else:
-            self.rect.x = SCREEN_WIDTH # Start off right
+            self.rect.x = SCREEN_WIDTH
             self.direction = -1
-        self.rect.y = 20 # Appear near the top of the screen
+        self.rect.y = 20
         self.speed = speed
 
         if mystery_ship_sound:
-            mystery_ship_sound.play(-1) # Loop indefinitely
+            mystery_ship_sound.play(-1)
 
     def update(self):
         self.rect.x += self.speed * self.direction
         if (self.direction == 1 and self.rect.left > SCREEN_WIDTH) or \
            (self.direction == -1 and self.rect.right < 0):
-            self.kill() # Remove if goes off-screen
+            self.kill()
             if mystery_ship_sound:
-                mystery_ship_sound.stop() # Stop sound when gone
+                mystery_ship_sound.stop()
 
 class ShieldBlock(pygame.sprite.Sprite):
     """Represents a single destructible block of a shield."""
@@ -206,14 +220,13 @@ class ShieldBlock(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.x = x
         self.rect.y = y
-        self.hp = SHIELD_HP # Health points for the block
+        self.hp = SHIELD_HP
 
     def hit(self):
         self.hp -= 1
         if self.hp <= 0:
-            self.kill() # Destroy block if HP runs out
+            self.kill()
         else:
-            # Change color slightly to show damage
             damage_percent = (SHIELD_HP - self.hp) / SHIELD_HP
             current_color_value = max(0, int(SHIELD_COLOR[1] * (1 - damage_percent)))
             self.image.fill((SHIELD_COLOR[0], current_color_value, SHIELD_COLOR[2]))
@@ -224,8 +237,8 @@ all_sprites = pygame.sprite.Group()
 player_bullets = pygame.sprite.Group()
 enemies = pygame.sprite.Group()
 enemy_bullets = pygame.sprite.Group()
-mystery_ships = pygame.sprite.Group() # New group for UFO
-shields = pygame.sprite.Group() # New group for shields
+mystery_ships = pygame.sprite.Group()
+shields = pygame.sprite.Group()
 
 player = Player()
 all_sprites.add(player)
@@ -233,9 +246,9 @@ all_sprites.add(player)
 score = 0
 lives = 3
 level = 1
-game_state = "RUNNING" # Possible states: "RUNNING", "GAME_OVER", "YOU_WON", "LEVEL_CLEARED", "PAUSED"
+game_state = "RUNNING"
 level_clear_timer = 0
-mystery_ship_timer = 0 # Timer to control UFO spawns
+mystery_ship_timer = 0
 
 # Dynamic difficulty parameters (updated per level)
 current_bullet_speed = BASE_BULLET_SPEED
@@ -260,14 +273,12 @@ def spawn_enemies(rows, cols, x_offset=50, y_offset=50, x_padding=60, y_padding=
     """
     Spawns a grid of enemies with current difficulty parameters.
     """
-    # Clear existing enemies and their bullets before spawning new wave
     enemies.empty()
     enemy_bullets.empty()
-    # Remove enemies from all_sprites as well
     for sprite in all_sprites:
         if isinstance(sprite, Enemy) or isinstance(sprite, EnemyBullet) or isinstance(sprite, MysteryShip):
             sprite.kill()
-    if mystery_ship_sound: # Stop UFO sound if any is active
+    if mystery_ship_sound:
         mystery_ship_sound.stop()
 
     actual_rows = min(rows + (level - 1) * ENEMY_ROWS_INCREMENT_PER_LEVEL, MAX_ENEMY_ROWS)
@@ -281,10 +292,9 @@ def spawn_enemies(rows, cols, x_offset=50, y_offset=50, x_padding=60, y_padding=
 
 def create_shields(num_shields=4, shield_base_y=SCREEN_HEIGHT - 100):
     """Creates a set of destructible shields."""
-    shield_width = SHIELD_BLOCK_SIZE * 5 # Example width for a single shield
+    shield_width = SHIELD_BLOCK_SIZE * 5
     gap_between_shields = (SCREEN_WIDTH - (num_shields * shield_width)) // (num_shields + 1)
     
-    # Clear existing shields
     shields.empty()
     for sprite in all_sprites:
         if isinstance(sprite, ShieldBlock):
@@ -292,13 +302,11 @@ def create_shields(num_shields=4, shield_base_y=SCREEN_HEIGHT - 100):
 
     for i in range(num_shields):
         start_x = (i + 1) * gap_between_shields + i * shield_width
-        # Create a simple block-based shield shape
-        # You can customize these block patterns for different shield shapes
         shield_structure = [
             (0,0), (1,0), (2,0), (3,0), (4,0),
             (0,1), (1,1), (2,1), (3,1), (4,1),
-            (0,2), (1,2), (3,2), (4,2), # Gap in middle
-            (0,3), (4,3) # Bottom corner blocks
+            (0,2), (1,2), (3,2), (4,2),
+            (0,3), (4,3)
         ]
         for dx, dy in shield_structure:
             block = ShieldBlock(start_x + dx * SHIELD_BLOCK_SIZE, shield_base_y + dy * SHIELD_BLOCK_SIZE)
@@ -308,10 +316,10 @@ def create_shields(num_shields=4, shield_base_y=SCREEN_HEIGHT - 100):
 
 # Initial setup for level 1
 calculate_difficulty_parameters(level)
-spawn_enemies(5, 10) # Starting with 5 rows of enemies
-create_shields() # Create shields at the start of the game
+spawn_enemies(5, 10)
+create_shields()
 
-# Function to draw text message boxes
+
 def draw_message_box(message, color, font_obj, y_offset_factor=0):
     """Draws a centered message box on the screen."""
     text_surface = font_obj.render(message, True, color)
@@ -324,11 +332,9 @@ def draw_message_box(message, color, font_obj, y_offset_factor=0):
 
     screen.blit(text_surface, text_rect)
 
-# Function to draw visual lives indicator
 def draw_lives(surface, x, y, lives_count):
     """Draws small player icons for each remaining life."""
     for i in range(lives_count):
-        # Create a miniature player ship image
         life_icon = pygame.Surface([25, 20], pygame.SRCALPHA)
         pygame.draw.polygon(life_icon, GREEN, [(0, 20), (25, 20), (12.5, 0)])
         surface.blit(life_icon, (x + i * 30, y))
@@ -366,12 +372,12 @@ while running:
                 enemies.empty()
                 enemy_bullets.empty()
                 mystery_ships.empty()
-                shields.empty() # Clear shields on restart
+                shields.empty()
 
                 player = Player()
                 all_sprites.add(player)
                 spawn_enemies(5, 10)
-                create_shields() # Recreate shields on restart
+                create_shields()
 
 
     if game_state == "RUNNING":
@@ -405,11 +411,11 @@ while running:
         mystery_ship_hits = pygame.sprite.groupcollide(player_bullets, mystery_ships, True, True)
         for bullet, ufo_list in mystery_ship_hits.items():
             for ufo in ufo_list:
-                score += MYSTERY_SHIP_POINTS # Bonus points
+                score += MYSTERY_SHIP_POINTS
                 if mystery_ship_explode_sound:
                     mystery_ship_explode_sound.play()
                 if mystery_ship_sound:
-                    mystery_ship_sound.stop() # Stop flying sound
+                    mystery_ship_sound.stop()
 
         # Enemy Bullet-Player collision
         player_hit_by_bullet = pygame.sprite.spritecollide(player, enemy_bullets, True)
@@ -420,12 +426,14 @@ while running:
             if lives <= 0:
                 game_state = "GAME_OVER"
 
-        # Player-Enemy collision (if enemies reach player's level or below)
+        # Player-Enemy collision (if enemies reach player or player moves into them)
         if pygame.sprite.spritecollide(player, enemies, False):
             game_state = "GAME_OVER"
 
         # Check if any enemy reached the bottom of the screen
         for enemy in enemies:
+            # Check against the bottom of the screen OR the top of the player's safe zone
+            # If enemies go below the shield level, it's also game over
             if enemy.rect.bottom >= SCREEN_HEIGHT:
                 game_state = "GAME_OVER"
                 break
@@ -439,16 +447,16 @@ while running:
 
         # --- Shield Collisions ---
         # Player bullets hitting shields
-        bullet_shield_collisions = pygame.sprite.groupcollide(player_bullets, shields, True, False) # Bullet removed, shield takes damage
+        bullet_shield_collisions = pygame.sprite.groupcollide(player_bullets, shields, True, False)
         for bullet, shield_blocks in bullet_shield_collisions.items():
             for block in shield_blocks:
-                block.hit() # Decrement shield block HP
+                block.hit()
 
         # Enemy bullets hitting shields
-        enemy_bullet_shield_collisions = pygame.sprite.groupcollide(enemy_bullets, shields, True, False) # Bullet removed, shield takes damage
+        enemy_bullet_shield_collisions = pygame.sprite.groupcollide(enemy_bullets, shields, True, False)
         for bullet, shield_blocks in enemy_bullet_shield_collisions.items():
             for block in shield_blocks:
-                block.hit() # Decrement shield block HP
+                block.hit()
 
 
     elif game_state == "LEVEL_CLEARED":
@@ -459,7 +467,7 @@ while running:
         if current_time - level_clear_timer > 3000:
             level += 1
             calculate_difficulty_parameters(level)
-            spawn_enemies(5, 10) # Respawn initial enemies for next level
+            spawn_enemies(5, 10)
             create_shields() # Recreate shields for new level
             game_state = "RUNNING"
 
@@ -471,7 +479,7 @@ while running:
     for x, y, size in stars:
         pygame.draw.circle(screen, WHITE, (x, y), size)
 
-    # Only draw sprites if game is running or if it's game over/you won
+    # Only draw sprites if game is running or if it's game over/you won/paused
     if game_state == "RUNNING" or game_state == "GAME_OVER" or game_state == "YOU_WON" or game_state == "PAUSED":
         all_sprites.draw(screen)
 
@@ -483,7 +491,7 @@ while running:
     level_text_rect = level_text.get_rect(center=(SCREEN_WIDTH // 2, 10 + level_text.get_height() // 2))
     screen.blit(level_text, level_text_rect)
 
-    draw_lives(screen, SCREEN_WIDTH - 100, 10, lives) # Draw visual lives
+    draw_lives(screen, SCREEN_WIDTH - 100, 10, lives)
 
     # Display Game Over / You Won / Level Clear / Paused message
     if game_state == "GAME_OVER":
