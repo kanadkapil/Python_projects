@@ -8,15 +8,16 @@ pygame.init()
 pygame.mixer.init()
 
 # --- Game Constants ---
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 600
+SCREEN_WIDTH = 1800
+SCREEN_HEIGHT = 900
 PLAYER_SPEED = 5
-PLAYER_SAFE_ZONE_HEIGHT = 200 # Player can move within the bottom 200 pixels of the screen
-PLAYER_FIRE_DELAY_NORMAL = 500 # milliseconds between shots
+PLAYER_SAFE_ZONE_HEIGHT = 600 # Player can move within the bottom 600 pixels of the screen
+PLAYER_FIRE_DELAY_NORMAL = 200 # milliseconds between shots
 PLAYER_FIRE_DELAY_RAPID = 100 # milliseconds for rapid fire
+PLAYER_INVINCIBILITY_DURATION = 2000 # milliseconds after being hit
 
 # Base difficulty parameters (will increase with levels)
-BASE_BULLET_SPEED = 10
+BASE_BULLET_SPEED = 12
 BASE_ENEMY_SPEED_X = 1.0
 BASE_ENEMY_SPEED_Y = 25
 BASE_ENEMY_BULLET_SPEED = 6
@@ -27,7 +28,7 @@ ENEMY_SPEED_X_INCREMENT = 0.1
 ENEMY_BULLET_SPEED_INCREMENT = 0.2
 ENEMY_SHOOT_PROB_INCREMENT = 0.0002
 ENEMY_ROWS_INCREMENT_PER_LEVEL = 0 # No extra rows by default, adjust if needed
-MAX_ENEMY_ROWS = 7 # Cap for enemy rows
+MAX_ENEMY_ROWS = 10 # Cap for enemy rows
 
 # Mystery Ship (UFO) parameters
 MYSTERY_SHIP_APPEAR_PROB = 0.0005 # Probability per frame for UFO to appear
@@ -46,6 +47,10 @@ RAPID_FIRE_DURATION = 7000 # milliseconds
 SCORE_MULTIPLIER_DURATION = 10000 # milliseconds
 SCORE_MULTIPLIER_VALUE = 2 # e.g., 2x points
 
+# Floating Score parameters
+FLOATING_SCORE_DURATION = 1500 # milliseconds
+FLOATING_SCORE_SPEED = 0.5 # pixels per frame upwards
+
 # Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
@@ -61,6 +66,7 @@ POWERUP_COLORS = {
     "extra_life": (0, 255, 255), # Cyan
     "score_multiplier": (255, 165, 0) # Orange
 }
+EXPLOSION_COLORS = [(255, 165, 0, 255), (255, 255, 0, 255)] # Orange, Yellow for explosions
 
 
 # Setup the display
@@ -75,6 +81,7 @@ FPS = 60
 font_small = pygame.font.Font(None, 30)
 font_medium = pygame.font.Font(None, 40)
 font_large = pygame.font.Font(None, 74)
+font_huge = pygame.font.Font(None, 120)
 
 # --- Sounds ---
 player_shoot_sound = None
@@ -83,10 +90,11 @@ player_hit_sound = None
 level_up_sound = None
 mystery_ship_sound = None
 mystery_ship_explode_sound = None
-powerup_collect_sound = None # New sound for collecting power-up
+powerup_collect_sound = None
 
 try:
     script_dir = os.path.dirname(__file__)
+    # Add your .wav files to the same directory as this script!
     player_shoot_sound = pygame.mixer.Sound(os.path.join(script_dir, 'laser.wav'))
     enemy_explosion_sound = pygame.mixer.Sound(os.path.join(script_dir, 'explosion.wav'))
     player_hit_sound = pygame.mixer.Sound(os.path.join(script_dir, 'hit.wav'))
@@ -111,12 +119,15 @@ class Player(pygame.sprite.Sprite):
     """Represents the player's spaceship."""
     def __init__(self):
         super().__init__()
-        self.image = pygame.Surface([50, 40], pygame.SRCALPHA)
-        pygame.draw.polygon(self.image, GREEN, [(0, 40), (50, 40), (25, 0)])
-        pygame.draw.rect(self.image, BLUE, (15, 35, 20, 10))
+        self.original_image = pygame.Surface([50, 40], pygame.SRCALPHA)
+        pygame.draw.polygon(self.original_image, GREEN, [(0, 40), (50, 40), (25, 0)])
+        pygame.draw.rect(self.original_image, BLUE, (15, 35, 20, 10))
+        self.image = self.original_image.copy() # Current image for flicker
         self.rect = self.image.get_rect()
         self.rect.centerx = SCREEN_WIDTH // 2
         self.rect.bottom = SCREEN_HEIGHT - 30
+        self.last_hit_time = 0
+        self.invincible = False
 
     def update(self):
         keys = pygame.key.get_pressed()
@@ -141,6 +152,16 @@ class Player(pygame.sprite.Sprite):
             self.rect.top = player_top_bound
         if self.rect.bottom > SCREEN_HEIGHT:
             self.rect.bottom = SCREEN_HEIGHT
+
+        # Invincibility flicker logic
+        if self.invincible:
+            # Flicker effect: make sprite semi-transparent every few frames
+            alpha = 255 if pygame.time.get_ticks() // 100 % 2 == 0 else 100
+            self.image.set_alpha(alpha)
+            if pygame.time.get_ticks() - self.last_hit_time > PLAYER_INVINCIBILITY_DURATION:
+                self.invincible = False
+                self.image.set_alpha(255) # Restore full opacity
+
 
 class Bullet(pygame.sprite.Sprite):
     """Represents a bullet fired by the player."""
@@ -289,8 +310,31 @@ class Explosion(pygame.sprite.Sprite):
         else:
             alpha = 255
 
-        current_color = (255, random.randint(100, 255), 0, alpha) # Orange-yellow explosion
+        # Choose between explosion colors
+        current_color_base = random.choice(EXPLOSION_COLORS)
+        current_color = (current_color_base[0], current_color_base[1], current_color_base[2], alpha)
         pygame.draw.circle(self.image, current_color, (30, 30), self.size)
+
+class FloatingScore(pygame.sprite.Sprite):
+    """Displays points earned briefly over a destroyed target."""
+    def __init__(self, center, score_value):
+        super().__init__()
+        self.value = score_value
+        self.font = font_medium # Use a medium font for floating scores
+        self.color = WHITE
+        self.image = self.font.render(str(self.value), True, self.color)
+        self.rect = self.image.get_rect(center=center)
+        self.start_time = pygame.time.get_ticks()
+
+    def update(self):
+        self.rect.y -= FLOATING_SCORE_SPEED # Move upwards
+        current_time = pygame.time.get_ticks()
+        if current_time - self.start_time > FLOATING_SCORE_DURATION:
+            self.kill()
+        
+        # Optional: fade out
+        alpha = max(0, 255 - int(255 * ((current_time - self.start_time) / FLOATING_SCORE_DURATION)))
+        self.image.set_alpha(alpha)
 
 
 # --- Game Variables & Groups ---
@@ -302,6 +346,7 @@ mystery_ships = pygame.sprite.Group()
 shields = pygame.sprite.Group()
 powerups = pygame.sprite.Group()
 explosions = pygame.sprite.Group()
+floating_scores = pygame.sprite.Group() # New group for floating scores
 
 player = Player()
 all_sprites.add(player)
@@ -309,7 +354,7 @@ all_sprites.add(player)
 score = 0
 lives = 3
 level = 1
-game_state = "RUNNING"
+game_state = "START_SCREEN" # Initial state is now START_SCREEN
 level_clear_timer = 0
 last_shot_time = pygame.time.get_ticks() # For player fire rate control
 
@@ -341,6 +386,44 @@ def calculate_difficulty_parameters(current_level):
     current_enemy_shoot_prob = BASE_ENEMY_SHOOT_PROB + (current_level - 1) * ENEMY_SHOOT_PROB_INCREMENT
     current_enemy_shoot_prob = min(current_enemy_shoot_prob, 0.015) # Example cap
 
+def reset_game():
+    """Resets all game elements to their initial state for a new game."""
+    global score, lives, level, game_state, last_shot_time, \
+           rapid_fire_active, rapid_fire_timer, current_player_fire_delay, \
+           score_multiplier_active, score_multiplier_value, score_multiplier_timer
+
+    score = 0
+    lives = 3
+    level = 1
+    game_state = "RUNNING" # Set to running after reset, usually from START_SCREEN or RESTART
+    last_shot_time = pygame.time.get_ticks()
+
+    rapid_fire_active = False
+    rapid_fire_timer = 0
+    current_player_fire_delay = PLAYER_FIRE_DELAY_NORMAL
+
+    score_multiplier_active = False
+    score_multiplier_value = 1
+    score_multiplier_timer = 0
+
+    calculate_difficulty_parameters(level)
+    all_sprites.empty()
+    player_bullets.empty()
+    enemies.empty()
+    enemy_bullets.empty()
+    mystery_ships.empty()
+    shields.empty()
+    powerups.empty()
+    explosions.empty()
+    floating_scores.empty() # Clear floating scores
+
+    # Re-add player and spawn new enemies/shields
+    global player # Need global to re-assign player object
+    player = Player()
+    all_sprites.add(player)
+    spawn_enemies(5, 10) # Initial enemy setup
+    create_shields() # Initial shield setup
+
 def spawn_enemies(rows, cols, x_offset=50, y_offset=50, x_padding=60, y_padding=50):
     """
     Spawns a grid of enemies with current difficulty parameters.
@@ -348,11 +431,12 @@ def spawn_enemies(rows, cols, x_offset=50, y_offset=50, x_padding=60, y_padding=
     enemies.empty()
     enemy_bullets.empty()
     powerups.empty() # Clear any lingering power-ups
+    floating_scores.empty() # Clear old floating scores
     # Remove these from all_sprites as well
     for sprite in all_sprites:
         if isinstance(sprite, Enemy) or isinstance(sprite, EnemyBullet) or \
            isinstance(sprite, MysteryShip) or isinstance(sprite, PowerUp) or \
-           isinstance(sprite, Explosion): # Also clear old explosions
+           isinstance(sprite, Explosion) or isinstance(sprite, FloatingScore):
             sprite.kill()
     if mystery_ship_sound:
         mystery_ship_sound.stop()
@@ -389,13 +473,6 @@ def create_shields(num_shields=4, shield_base_y=SCREEN_HEIGHT - 100):
             all_sprites.add(block)
             shields.add(block)
 
-
-# Initial setup for level 1
-calculate_difficulty_parameters(level)
-spawn_enemies(5, 10)
-create_shields()
-
-
 def draw_message_box(message, color, font_obj, y_offset_factor=0):
     """Draws a centered message box on the screen."""
     text_surface = font_obj.render(message, True, color)
@@ -415,66 +492,77 @@ def draw_lives(surface, x, y, lives_count):
         pygame.draw.polygon(life_icon, GREEN, [(0, 20), (25, 20), (12.5, 0)])
         surface.blit(life_icon, (x + i * 30, y))
 
+def draw_start_screen():
+    """Draws the game's start screen with instructions."""
+    screen.fill(BLACK)
+    for x, y, size in stars: # Draw stars on start screen
+        pygame.draw.circle(screen, WHITE, (x, y), size)
+
+    title_text = font_huge.render("SPACE INVADERS", True, WHITE)
+    title_rect = title_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 4))
+    screen.blit(title_text, title_rect)
+
+    instructions = [
+        "Controls:",
+        "Move: Arrow Keys (Up, Down, Left, Right)",
+        "Shoot: Spacebar",
+        "Pause/Unpause: 'P' or 'ESC'",
+        "Restart (Game Over/Win): 'R'",
+        "",
+        "Objective:",
+        "Destroy all descending aliens.",
+        "Avoid their bullets and collisions.",
+        "Collect power-ups for an advantage!",
+        "",
+        "Press SPACE to Start",
+    ]
+    
+    y_offset = SCREEN_HEIGHT // 2 - 100
+    for line in instructions:
+        line_text = font_medium.render(line, True, LIGHT_BLUE)
+        line_rect = line_text.get_rect(center=(SCREEN_WIDTH // 2, y_offset))
+        screen.blit(line_text, line_rect)
+        y_offset += 40
+
+    pygame.display.flip()
+
 # --- Game Loop ---
 running = True
 while running:
-    current_time = pygame.time.get_ticks() # Get current time at the start of each frame
+    current_time = pygame.time.get_ticks()
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_SPACE and game_state == "RUNNING":
-                # Only allow shooting if enough time has passed since last shot
-                if current_time - last_shot_time > current_player_fire_delay:
-                    bullet = Bullet(player.rect.centerx, player.rect.top, current_bullet_speed)
-                    all_sprites.add(bullet)
-                    player_bullets.add(bullet)
-                    if player_shoot_sound:
-                        player_shoot_sound.play()
-                    last_shot_time = current_time # Reset last shot time
+            if game_state == "START_SCREEN":
+                if event.key == pygame.K_SPACE:
+                    reset_game() # Start the game
+            elif game_state == "RUNNING":
+                if event.key == pygame.K_SPACE:
+                    if current_time - last_shot_time > current_player_fire_delay:
+                        bullet = Bullet(player.rect.centerx, player.rect.top, current_bullet_speed)
+                        all_sprites.add(bullet)
+                        player_bullets.add(bullet)
+                        if player_shoot_sound:
+                            player_shoot_sound.play()
+                        last_shot_time = current_time
 
-            # Toggle pause with 'P' or 'Escape'
-            if event.key == pygame.K_p or event.key == pygame.K_ESCAPE:
-                if game_state == "RUNNING":
+                # Toggle pause with 'P' or 'Escape'
+                if event.key == pygame.K_p or event.key == pygame.K_ESCAPE:
                     game_state = "PAUSED"
-                elif game_state == "PAUSED":
+            elif game_state == "PAUSED":
+                if event.key == pygame.K_p or event.key == pygame.K_ESCAPE:
                     game_state = "RUNNING"
+            elif game_state == "GAME_OVER" or game_state == "YOU_WON":
+                if event.key == pygame.K_r:
+                    # No need for reset_game() here, as restart logic is minimal in Game Over screen
+                    # The prompt implies a full reset from the Game Over screen.
+                    # Setting game_state to START_SCREEN allows re-reading instructions.
+                    game_state = "START_SCREEN" # Go back to start screen after game over/win
 
-            if event.key == pygame.K_r and (game_state == "GAME_OVER" or game_state == "YOU_WON"):
-                # Reset all game state for restart
-                game_state = "RUNNING"
-                score = 0
-                lives = 3
-                level = 1
-                
-                # Reset power-up states
-                rapid_fire_active = False
-                rapid_fire_timer = 0
-                current_player_fire_delay = PLAYER_FIRE_DELAY_NORMAL
-
-                score_multiplier_active = False
-                score_multiplier_value = 1
-                score_multiplier_timer = 0
-
-                calculate_difficulty_parameters(level)
-                all_sprites.empty()
-                player_bullets.empty()
-                enemies.empty()
-                enemy_bullets.empty()
-                mystery_ships.empty()
-                shields.empty()
-                powerups.empty()
-                explosions.empty() # Clear explosions on restart
-
-                player = Player()
-                all_sprites.add(player)
-                spawn_enemies(5, 10)
-                create_shields()
-
-
+    # Game logic updates
     if game_state == "RUNNING":
-        # Update sprites
         all_sprites.update()
 
         # --- Power-up timer checks ---
@@ -505,16 +593,19 @@ while running:
         collisions = pygame.sprite.groupcollide(player_bullets, enemies, True, True)
         for bullet, enemy_list in collisions.items():
             for enemy in enemy_list:
-                score += (10 * score_multiplier_value) # Apply multiplier
+                points_earned = 10 * score_multiplier_value
+                score += points_earned
                 if enemy_explosion_sound:
                     enemy_explosion_sound.play()
                 
-                # Create explosion effect
                 explosion = Explosion(enemy.rect.center)
                 all_sprites.add(explosion)
                 explosions.add(explosion)
 
-                # Power-up drop chance
+                floating_score = FloatingScore(enemy.rect.center, points_earned)
+                all_sprites.add(floating_score)
+                floating_scores.add(floating_score)
+
                 if random.random() < POWERUP_DROP_PROB_ENEMY:
                     powerup_type = random.choice(list(POWERUP_COLORS.keys()))
                     powerup = PowerUp(enemy.rect.centerx, enemy.rect.centery, powerup_type)
@@ -526,18 +617,21 @@ while running:
         mystery_ship_hits = pygame.sprite.groupcollide(player_bullets, mystery_ships, True, True)
         for bullet, ufo_list in mystery_ship_hits.items():
             for ufo in ufo_list:
-                score += (MYSTERY_SHIP_POINTS * score_multiplier_value) # Apply multiplier
+                points_earned = MYSTERY_SHIP_POINTS * score_multiplier_value
+                score += points_earned
                 if mystery_ship_explode_sound:
                     mystery_ship_explode_sound.play()
                 if mystery_ship_sound:
                     mystery_ship_sound.stop()
                 
-                # Create explosion effect
                 explosion = Explosion(ufo.rect.center)
                 all_sprites.add(explosion)
                 explosions.add(explosion)
 
-                # UFO has higher chance to drop a power-up
+                floating_score = FloatingScore(ufo.rect.center, points_earned)
+                all_sprites.add(floating_score)
+                floating_scores.add(floating_score)
+
                 if random.random() < POWERUP_DROP_PROB_UFO:
                     powerup_type = random.choice(list(POWERUP_COLORS.keys()))
                     powerup = PowerUp(ufo.rect.centerx, ufo.rect.centery, powerup_type)
@@ -546,17 +640,29 @@ while running:
 
 
         # Enemy Bullet-Player collision
-        player_hit_by_bullet = pygame.sprite.spritecollide(player, enemy_bullets, True)
-        if player_hit_by_bullet:
-            lives -= 1
-            if player_hit_sound:
-                player_hit_sound.play()
-            if lives <= 0:
-                game_state = "GAME_OVER"
+        # Only take damage if not invincible
+        if not player.invincible:
+            player_hit_by_bullet = pygame.sprite.spritecollide(player, enemy_bullets, True)
+            if player_hit_by_bullet:
+                lives -= 1
+                player.invincible = True
+                player.last_hit_time = current_time
+                if player_hit_sound:
+                    player_hit_sound.play()
+                if lives <= 0:
+                    game_state = "GAME_OVER"
 
         # Player-Enemy collision (if enemies reach player or player moves into them)
-        if pygame.sprite.spritecollide(player, enemies, False):
-            game_state = "GAME_OVER"
+        # Only take damage if not invincible
+        if not player.invincible:
+            if pygame.sprite.spritecollide(player, enemies, False):
+                lives -=1
+                player.invincible = True
+                player.last_hit_time = current_time
+                if player_hit_sound:
+                    player_hit_sound.play()
+                if lives <=0:
+                    game_state = "GAME_OVER"
 
         # Check if any enemy reached the bottom of the screen
         for enemy in enemies:
@@ -570,7 +676,6 @@ while running:
             level_clear_timer = pygame.time.get_ticks()
             if level_up_sound:
                 level_up_sound.play()
-            # Stop any active UFO sound when level clears
             if mystery_ship_sound:
                 mystery_ship_sound.stop()
 
@@ -589,7 +694,7 @@ while running:
                 block.hit()
 
         # --- Player collecting Power-ups ---
-        player_powerup_collisions = pygame.sprite.spritecollide(player, powerups, True) # Remove powerup on collision
+        player_powerup_collisions = pygame.sprite.spritecollide(player, powerups, True)
         for powerup in player_powerup_collisions:
             if powerup_collect_sound:
                 powerup_collect_sound.play()
@@ -614,62 +719,61 @@ while running:
             level += 1
             calculate_difficulty_parameters(level)
             spawn_enemies(5, 10)
-            create_shields() # Recreate shields for new level
+            create_shields()
             game_state = "RUNNING"
 
 
     # --- Drawing ---
     screen.fill(BLACK)
 
-    # Draw starfield background
+    # Draw starfield background (always, except for full splash screens)
     for x, y, size in stars:
         pygame.draw.circle(screen, WHITE, (x, y), size)
 
-    # Only draw sprites if game is running or if it's game over/you won/paused
-    # Also draw during LEVEL_CLEARED to show the message and remaining sprites
-    if game_state == "RUNNING" or game_state == "GAME_OVER" or game_state == "YOU_WON" or \
-       game_state == "PAUSED" or game_state == "LEVEL_CLEARED":
+    if game_state == "START_SCREEN":
+        draw_start_screen()
+    else: # Draw game elements for all other states
         all_sprites.draw(screen)
 
-    # Display score, lives, and level
-    score_text = font_small.render(f"Score: {score}", True, WHITE)
-    screen.blit(score_text, (10, 10))
+        # Display score, lives, and level
+        score_text = font_small.render(f"Score: {score}", True, WHITE)
+        screen.blit(score_text, (10, 10))
 
-    level_text = font_small.render(f"Level: {level}", True, WHITE)
-    level_text_rect = level_text.get_rect(center=(SCREEN_WIDTH // 2, 10 + level_text.get_height() // 2))
-    screen.blit(level_text, level_text_rect)
+        level_text = font_small.render(f"Level: {level}", True, WHITE)
+        level_text_rect = level_text.get_rect(center=(SCREEN_WIDTH // 2, 10 + level_text.get_height() // 2))
+        screen.blit(level_text, level_text_rect)
 
-    draw_lives(screen, SCREEN_WIDTH - 100, 10, lives)
+        draw_lives(screen, SCREEN_WIDTH - 100, 10, lives)
 
-    # Display power-up active indicators
-    powerup_indicator_y = 40
-    if rapid_fire_active:
-        rf_text = font_small.render("RAPID FIRE!", True, POWERUP_COLORS["rapid_fire"])
-        screen.blit(rf_text, (10, powerup_indicator_y))
-        powerup_indicator_y += 20
-    if score_multiplier_active:
-        sm_text = font_small.render(f"SCORE x{score_multiplier_value}!", True, POWERUP_COLORS["score_multiplier"])
-        screen.blit(sm_text, (10, powerup_indicator_y))
+        # Display power-up active indicators
+        powerup_indicator_y = 40
+        if rapid_fire_active:
+            rf_text = font_small.render("RAPID FIRE!", True, POWERUP_COLORS["rapid_fire"])
+            screen.blit(rf_text, (10, powerup_indicator_y))
+            powerup_indicator_y += 20
+        if score_multiplier_active:
+            sm_text = font_small.render(f"SCORE x{score_multiplier_value}!", True, POWERUP_COLORS["score_multiplier"])
+            screen.blit(sm_text, (10, powerup_indicator_y))
 
 
-    # Display Game Over / You Won / Level Clear / Paused message
-    if game_state == "GAME_OVER":
-        draw_message_box("GAME OVER!", RED, font_large, y_offset_factor=-50)
-        draw_message_box(f"Final Score: {score}", WHITE, font_medium, y_offset_factor=0)
-        restart_text = font_medium.render("Press 'R' to Restart", True, BLUE)
-        restart_rect = restart_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 100))
-        screen.blit(restart_text, restart_rect)
+        # Display Game Over / You Won / Level Clear / Paused message
+        if game_state == "GAME_OVER":
+            draw_message_box("GAME OVER!", RED, font_large, y_offset_factor=-50)
+            draw_message_box(f"Final Score: {score}", WHITE, font_medium, y_offset_factor=0)
+            restart_text = font_medium.render("Press 'R' to return to Start Screen", True, BLUE) # Changed to return to start screen
+            restart_rect = restart_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 100))
+            screen.blit(restart_text, restart_rect)
 
-    elif game_state == "YOU_WON":
-        draw_message_box("YOU WON!", GREEN, font_large, y_offset_factor=-50)
-        draw_message_box(f"Final Score: {score}", WHITE, font_medium, y_offset_factor=0)
-        restart_text = font_medium.render("Press 'R' to Restart", True, BLUE)
-        restart_rect = restart_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 100))
-        screen.blit(restart_text, restart_rect)
+        elif game_state == "YOU_WON":
+            draw_message_box("YOU WON!", GREEN, font_large, y_offset_factor=-50)
+            draw_message_box(f"Final Score: {score}", WHITE, font_medium, y_offset_factor=0)
+            restart_text = font_medium.render("Press 'R' to return to Start Screen", True, BLUE) # Changed
+            restart_rect = restart_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 100))
+            screen.blit(restart_text, restart_rect)
 
-    elif game_state == "PAUSED":
-        draw_message_box("PAUSED", YELLOW, font_large, y_offset_factor=-50)
-        draw_message_box("Press 'P' or 'ESC' to Resume", WHITE, font_medium, y_offset_factor=0) # Updated message
+        elif game_state == "PAUSED":
+            draw_message_box("PAUSED", YELLOW, font_large, y_offset_factor=-50)
+            draw_message_box("Press 'P' or 'ESC' to Resume", WHITE, font_medium, y_offset_factor=0)
 
     pygame.display.flip()
 
