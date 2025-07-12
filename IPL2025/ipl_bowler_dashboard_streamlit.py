@@ -4,109 +4,128 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
+from math import pi
+import plotly.express as px
+import plotly.graph_objects as go
 
-# Streamlit setup
-st.set_page_config(layout="wide")
-st.title("🏏 IPL 2025 Bowler Analysis Dashboard")
-
-# Load data
 @st.cache_data
-def load_data():
+def load_and_clean_data(min_overs=10):
     url = "https://raw.githubusercontent.com/kanadkapil/Data/main/IPL2025_BowlerData.csv"
     df = pd.read_csv(url, on_bad_lines='skip')
 
-    # Convert columns
-    cols_to_numeric = ['Overs', 'Pace (km/h)', 'Runs Conceded', 'Boundary % (4s & 6s)',
-                       'Dot Ball %', 'Average Runs per Over (PP)', 'Average Runs per Over (MO)',
-                       'Average Runs per Over (DO)']
-    for col in cols_to_numeric:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-
-    df = df.dropna(subset=cols_to_numeric)
+    numeric_cols = [
+        'Overs', 'Pace (km/h)', 'Runs Conceded', 'Boundary % (4s & 6s)', 'Dot Ball %',
+        'Average Runs per Over (PP)', 'Average Runs per Over (MO)', 'Average Runs per Over (DO)'
+    ]
+    df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce')
+    df.dropna(subset=numeric_cols, inplace=True)
+    df = df[df['Overs'] >= min_overs].copy()
     df['Economy_calc'] = df['Runs Conceded'] / df['Overs']
     return df
 
-df = load_data()
+def add_filters(df):
+    st.sidebar.header("Filter Options")
+    overs = st.sidebar.slider("Min Overs", 0, int(df['Overs'].max()), 10)
+    wickets = st.sidebar.slider("Min Wickets", 0, int(df['Wickets'].max()), 0)
+    pace = st.sidebar.slider("Pace Range (km/h)", int(df['Pace (km/h)'].min()), int(df['Pace (km/h)'].max()), (120, 150))
+    economy = st.sidebar.slider("Max Economy", 0.0, float(df['Economy_calc'].max()), float(df['Economy_calc'].max()))
 
-# Sidebar filters
-min_overs = st.sidebar.slider("Minimum Overs Bowled", min_value=0, max_value=20, value=10)
-df = df[df['Overs'] >= min_overs]
+    df = df[(df['Overs'] >= overs) &
+            (df['Wickets'] >= wickets) &
+            (df['Pace (km/h)'].between(*pace)) &
+            (df['Economy_calc'] <= economy)]
+    return df
 
-# 📊 Section 1: Economy Phase Barplot
-st.subheader("1️⃣ Economy Rate by Match Phase")
-df_sorted = df.sort_values(by='Runs Conceded', ascending=True)
-df_melt = df_sorted.melt(
-    id_vars='Bowler Name',
-    value_vars=['Average Runs per Over (PP)', 'Average Runs per Over (MO)', 'Average Runs per Over (DO)'],
-    var_name='Phase',
-    value_name='Economy'
-)
+def show_interactive_table(df):
+    st.subheader("📋 Full Bowler Data Table")
+    st.dataframe(df, use_container_width=True)
 
-fig1, ax1 = plt.subplots(figsize=(12, len(df_sorted) * 0.4))
-barplot = sns.barplot(data=df_melt, y='Bowler Name', x='Economy', hue='Phase', orient='h', ax=ax1)
-for container in barplot.containers:
-    barplot.bar_label(container, fmt='%.2f', label_type='edge', fontsize=7, padding=2)
-plt.title("Economy in Each Match Phase (Sorted by Runs Conceded)")
-st.pyplot(fig1)
+def dot_vs_boundary_ratio(df):
+    df['Dot/Boundary Ratio'] = df['Dot Ball %'] / df['Boundary % (4s & 6s)']
+    top5 = df.sort_values(by='Dot/Boundary Ratio', ascending=False).head(5)
+    st.subheader("🏆 Top 5 Most Disciplined Bowlers")
+    st.dataframe(top5[['Bowler Name', 'Dot Ball %', 'Boundary % (4s & 6s)', 'Dot/Boundary Ratio']])
 
-# 📊 Section 2: Speed vs Wickets
-st.subheader("2️⃣ Bowling Speed vs Wickets")
-fig2, ax2 = plt.subplots(figsize=(12, 6))
-scatter = sns.scatterplot(
-    data=df,
-    x='Pace (km/h)',
-    y='Wickets',
-    size='Wickets',
-    hue='Economy_calc',
-    palette='coolwarm',
-    alpha=0.7,
-    sizes=(50, 300),
-    ax=ax2
-)
-sns.regplot(
-    data=df,
-    x='Pace (km/h)',
-    y='Wickets',
-    scatter=False,
-    color='black',
-    line_kws={"linestyle": "dashed"},
-    ax=ax2
-)
-for i, row in df[df['Wickets'] >= 10].iterrows():
-    ax2.text(row['Pace (km/h)'] + 0.3, row['Wickets'] + 0.3, row['Bowler Name'], fontsize=7)
+def compare_bowlers(df):
+    st.subheader("🆚 Compare Two Bowlers")
+    bowler_list = df['Bowler Name'].unique()
+    b1 = st.selectbox("Select Bowler 1", bowler_list, index=0)
+    b2 = st.selectbox("Select Bowler 2", bowler_list, index=1)
 
-plt.title('Bowling Speed vs Wickets Taken')
-plt.xlabel('Pace (km/h)')
-plt.ylabel('Wickets')
-st.pyplot(fig2)
+    bowler_df = df[df['Bowler Name'].isin([b1, b2])]
+    if len(bowler_df) < 2:
+        st.warning("Select two different bowlers.")
+        return
 
-# 📊 Section 3: Dot/Bdry Ratio
-st.subheader("3️⃣ Dot Ball to Boundary % Ratio")
-dot_vs_boundary = df[['Bowler Name', 'Dot Ball %', 'Boundary % (4s & 6s)']].copy()
-dot_vs_boundary['Dot/Boundary Ratio'] = dot_vs_boundary['Dot Ball %'] / dot_vs_boundary['Boundary % (4s & 6s)']
-dot_vs_boundary_sorted = dot_vs_boundary.sort_values(by='Dot/Boundary Ratio', ascending=False)
+    # Radar Plot
+    st.markdown("### 📊 Radar Chart Comparison")
+    scaler = MinMaxScaler()
+    stats = ['Dot Ball %', 'Wickets', 'Economy_calc']
+    norm_data = scaler.fit_transform(bowler_df[stats])
+    radar_df = pd.DataFrame(norm_data, columns=stats)
+    radar_df['Bowler Name'] = bowler_df['Bowler Name'].values
 
-st.markdown("#### 🏆 Top 5 Most Disciplined Bowlers")
-st.dataframe(dot_vs_boundary_sorted.head(5), use_container_width=True)
+    fig = go.Figure()
+    for _, row in radar_df.iterrows():
+        fig.add_trace(go.Scatterpolar(
+            r=list(row[stats]) + [row[stats[0]]],
+            theta=stats + [stats[0]],
+            fill='toself',
+            name=row['Bowler Name']
+        ))
+    fig.update_layout(polar=dict(radialaxis=dict(visible=True)), showlegend=True)
+    st.plotly_chart(fig)
 
-# 📊 Section 4: Heatmap
-st.subheader("4️⃣ Correlation Matrix of Economy")
-fig4, ax4 = plt.subplots(figsize=(6, 5))
-corr = df[['Average Runs per Over (PP)', 'Average Runs per Over (MO)', 'Average Runs per Over (DO)', 'Economy_calc']].corr()
-sns.heatmap(corr, annot=True, cmap='vlag', center=0, ax=ax4)
-plt.title("Correlation Matrix")
-st.pyplot(fig4)
-st.markdown("> 💡 **Note**: Death Over economy has the highest impact on overall economy.")
+    # Bar Chart
+    st.markdown("### 📊 Wickets & Economy")
+    bar_data = bowler_df[['Bowler Name', 'Wickets', 'Economy_calc']]
+    st.bar_chart(bar_data.set_index('Bowler Name'))
 
-# 📊 Section 5: Composite Score
-st.subheader("5️⃣ Composite Performance Score")
+    # Pie Chart
+    st.markdown("### 🥧 Overs Distribution")
+    fig = px.pie(bowler_df, names='Bowler Name', values='Overs', title='Overs Bowled')
+    st.plotly_chart(fig)
 
-scaler = MinMaxScaler()
-df[['Dot Ball %_scaled', 'Wickets_scaled', 'Economy_scaled']] = scaler.fit_transform(
-    df[['Dot Ball %', 'Wickets', 'Economy_calc']]
-)
-df['Performance Score'] = (df['Dot Ball %_scaled'] + df['Wickets_scaled'] + (1 - df['Economy_scaled'])) / 3
-df_top = df.sort_values(by='Performance Score', ascending=False)
+    # Line Chart
+    st.markdown("### 📈 Phase-wise Economy Comparison")
+    phases = ['Average Runs per Over (PP)', 'Average Runs per Over (MO)', 'Average Runs per Over (DO)']
+    long_df = bowler_df.melt(id_vars='Bowler Name', value_vars=phases, var_name='Phase', value_name='Economy')
+    fig = px.line(long_df, x='Phase', y='Economy', color='Bowler Name', markers=True)
+    st.plotly_chart(fig)
 
-st.markdown("#### 🎯 Top 5 Bowlers by Composite Score")
-st.dataframe(df_top[['Bowler Name', 'Dot Ball %', 'Wickets', 'Economy_calc', 'Performance Score']].head(5), use_container_width=True)
+def main():
+    st.set_page_config("IPL 2025 Bowler Dashboard", layout="wide")
+    st.title("🏏 IPL 2025 Bowler Dashboard")
+    st.markdown("Analyze, compare, and explore detailed stats of IPL 2025 bowlers.")
+
+    min_overs = st.sidebar.number_input("Minimum Overs to Consider", value=10, min_value=0)
+    df = load_and_clean_data(min_overs)
+    df = add_filters(df)
+
+    show_interactive_table(df)
+
+    st.header("📈 Visual Analytics")
+    dot_vs_boundary_ratio(df)
+
+    st.subheader("📊 Economy Rate Across Match Phases")
+    melt_df = df.melt(id_vars='Bowler Name',
+                      value_vars=['Average Runs per Over (PP)', 'Average Runs per Over (MO)', 'Average Runs per Over (DO)'],
+                      var_name='Phase', value_name='Economy')
+    fig = px.bar(melt_df, x='Economy', y='Bowler Name', color='Phase', orientation='h')
+    st.plotly_chart(fig)
+
+    st.subheader("🚀 Pace vs Wickets")
+    fig = px.scatter(df, x='Pace (km/h)', y='Wickets', size='Wickets', color='Economy_calc',
+                     hover_name='Bowler Name', color_continuous_scale='RdYlGn_r')
+    st.plotly_chart(fig)
+
+    st.subheader("📊 Correlation Heatmap")
+    corr = df[['Average Runs per Over (PP)', 'Average Runs per Over (MO)', 'Average Runs per Over (DO)', 'Economy_calc']].corr()
+    fig, ax = plt.subplots()
+    sns.heatmap(corr, annot=True, cmap='coolwarm', ax=ax)
+    st.pyplot(fig)
+
+    compare_bowlers(df)
+
+if __name__ == "__main__":
+    main()
