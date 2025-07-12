@@ -57,8 +57,7 @@ def extra_visuals(df):
     area_fig.add_trace(go.Scatter(x=area_df['Bowler Name'], y=area_df['Overs'], name='Overs', fill='tonexty'))
     st.plotly_chart(area_fig, use_container_width=True)
     
-    
-        # Phase-wise Economy Chart
+    # Phase-wise Economy Chart
     st.subheader("📊 Average Economy by Match Phase")
     melt_df = df.melt(
         id_vars='Bowler Name',
@@ -117,42 +116,79 @@ def compare_bowlers(df):
     st.header("🆚 Compare Two Bowlers")
 
     bowler_list = df['Bowler Name'].unique()
-    # Visual comparison
-    st.subheader("🎯 Radar & Charts Comparison")
+
+    # --- Bowler Selection ---
     c1, c2 = st.columns(2)
     b1 = c1.selectbox("Bowler for Charts: A", bowler_list)
     b2 = c2.selectbox("Bowler for Charts: B", bowler_list, index=1)
-    if b1 != b2:
-        sub = df[df['Bowler Name'].isin([b1, b2])]
-        stats = ['Dot Ball %', 'Wickets', 'Economy_calc']
-        nd = MinMaxScaler().fit_transform(sub[stats])
-        rd = pd.DataFrame(nd, columns=stats); rd['Bowler Name']=sub['Bowler Name'].values
-        fig = go.Figure()
-        for _, r in rd.iterrows():
-            fig.add_trace(go.Scatterpolar(r=list(r[stats])+[r[stats[0]]], theta=stats+[stats[0]], fill='toself', name=r['Bowler Name']))
-        fig.update_layout(polar=dict(radialaxis=dict(visible=True)), showlegend=True)
-        st.plotly_chart(fig, use_container_width=True)
-        st.bar_chart(sub.set_index('Bowler Name')[["Wickets", "Economy_calc"]])
-        pie_fig = px.pie(sub, names='Bowler Name', values='Overs', title='Overs Distribution')
-        st.plotly_chart(pie_fig, use_container_width=True)
-        ph = ['Average Runs per Over (PP)', 'Average Runs per Over (MO)', 'Average Runs per Over (DO)']
-        ld = sub.melt(id_vars='Bowler Name', value_vars=ph, var_name='Phase', value_name='Economy')
-        line_fig = px.line(ld, x='Phase', y='Economy', color='Bowler Name', markers=True)
-        st.plotly_chart(line_fig, use_container_width=True)
-    else:
-        st.warning("Select two different bowlers for charts.")
 
-    # Side-by-side table
+    if b1 == b2:
+        st.warning("Select two different bowlers for comparison.")
+        return
+
+    sub_df = df[df['Bowler Name'].isin([b1, b2])]
+
+    # --- 📊 Bar Chart ---
+    st.subheader("📊 Bar Chart: Core Metrics Comparison")
+    core_stats = ['Wickets', 'Economy_calc', 'Dot Ball %', 'Boundary % (4s & 6s)', 'Pace (km/h)']
+    bar_df = sub_df[['Bowler Name'] + core_stats].set_index('Bowler Name').T
+    st.bar_chart(bar_df)
+
+    # --- 📉 Line Chart: Phase-wise Economy ---
+    st.subheader("📈 Line Chart: Economy Across Phases")
+    phase_stats = ['Average Runs per Over (PP)', 'Average Runs per Over (MO)', 'Average Runs per Over (DO)']
+    line_df = sub_df.melt(id_vars='Bowler Name', value_vars=phase_stats, var_name='Phase', value_name='Economy')
+    line_fig = px.line(line_df, x='Phase', y='Economy', color='Bowler Name', markers=True)
+    st.plotly_chart(line_fig, use_container_width=True)
+
+    # --- ⏱️ Gauge Charts ---
+    st.subheader("⏱️ Gauge Chart: Economy Rate")
+    col1, col2 = st.columns(2)
+    for idx, bowler in enumerate([b1, b2]):
+        econ_val = float(df.loc[df['Bowler Name'] == bowler, 'Economy_calc'].iloc[0])
+        gauge = go.Figure(go.Indicator(
+            mode="gauge+number", value=econ_val,
+            title={'text': f"{bowler}'s Economy"},
+            gauge={'axis': {'range': [0, df['Economy_calc'].max()]},
+                   'bar': {'color': "green" if econ_val < 8 else "red"}}
+        ))
+        if idx == 0:
+            col1.plotly_chart(gauge, use_container_width=True)
+        else:
+            col2.plotly_chart(gauge, use_container_width=True)
+
+    # --- 🫧 Bubble Chart ---
+    st.subheader("🫧 Bubble Chart: Pace vs Economy vs Wickets")
+    bubble_fig = px.scatter(sub_df, x='Pace (km/h)', y='Economy_calc',
+                            size='Wickets', color='Bowler Name', hover_name='Bowler Name',
+                            size_max=60, color_discrete_sequence=['#636EFA', '#EF553B'])
+    st.plotly_chart(bubble_fig, use_container_width=True)
+
+    # --- 🍩 Donut Chart ---
+    st.subheader("🍩 Donut Chart: Overs Distribution")
+    donut_fig = px.pie(sub_df, names='Bowler Name', values='Overs', hole=0.4,
+                       title="Overs Bowled Comparison")
+    st.plotly_chart(donut_fig, use_container_width=True)
+
+    # --- 🌡️ Heat Map: Stat Intensity ---
+    st.subheader("🌡️ Heat Map: Stat Intensity")
+    heat_stats = ['Wickets', 'Economy_calc', 'Dot Ball %', 'Boundary % (4s & 6s)', 'Overs']
+    heat_df = sub_df[['Bowler Name'] + heat_stats].set_index('Bowler Name')
+    fig, ax = plt.subplots()
+    sns.heatmap(heat_df, annot=True, cmap="YlGnBu", fmt=".2f", ax=ax)
+    st.pyplot(fig)
+
+    # --- 📋 Side-by-Side Table ---
     st.subheader("📋 Side-by-Side Comparison Table")
     c3, c4 = st.columns(2)
     s1 = c3.selectbox("Bowler for Table: A", bowler_list, key='t1')
     s2 = c4.selectbox("Bowler for Table: B", bowler_list, index=1, key='t2')
     if s1 != s2:
         subs = df[df['Bowler Name'].isin([s1, s2])]
-        cols = [col for col in df.columns if col!='Bowler Name']
-        sel = st.multiselect("Choose Stats", options=cols, default=['Wickets','Economy_calc','Dot Ball %','Overs'])
+        cols = [col for col in df.columns if col != 'Bowler Name']
+        sel = st.multiselect("Choose Stats", options=cols, default=['Wickets', 'Economy_calc', 'Dot Ball %', 'Overs'])
         if sel:
-            st.dataframe(subs[['Bowler Name']+sel].set_index('Bowler Name').T, use_container_width=True)
+            st.dataframe(subs[['Bowler Name'] + sel].set_index('Bowler Name').T, use_container_width=True)
         else:
             st.info("Select at least one stat.")
     else:
